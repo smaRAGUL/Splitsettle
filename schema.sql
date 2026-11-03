@@ -1,0 +1,107 @@
+CREATE DATABASE IF NOT EXISTS splitsettle
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_0900_ai_ci;
+
+USE splitsettle;
+
+-- 1. USERS
+CREATE TABLE IF NOT EXISTS users (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(100) NOT NULL,
+  email VARCHAR(254) NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+-- 2. GROUPS
+CREATE TABLE IF NOT EXISTS `groups` (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(120) NOT NULL,
+  description VARCHAR(500) NULL,
+  currency CHAR(3) NOT NULL DEFAULT 'INR',
+  created_by BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_groups_creator
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- 3. GROUP MEMBERS
+CREATE TABLE IF NOT EXISTS group_members (
+  group_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  role ENUM('owner', 'member') NOT NULL DEFAULT 'member',
+  joined_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (group_id, user_id),
+  CONSTRAINT fk_gm_group
+    FOREIGN KEY (group_id) REFERENCES `groups`(id) ON DELETE CASCADE,
+  CONSTRAINT fk_gm_user
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- 4. EXPENSES
+CREATE TABLE IF NOT EXISTS expenses (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  group_id BIGINT UNSIGNED NOT NULL,
+  paid_by BIGINT UNSIGNED NOT NULL,
+  created_by BIGINT UNSIGNED NOT NULL,
+  title VARCHAR(200) NOT NULL,
+  description VARCHAR(500) NULL,
+  category VARCHAR(60) NOT NULL DEFAULT 'General',
+  amount DECIMAL(10, 2) NOT NULL,
+  amount_paise BIGINT UNSIGNED NOT NULL,
+  expense_date DATE NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_expenses_group_date (group_id, expense_date),
+  CONSTRAINT fk_expenses_group
+    FOREIGN KEY (group_id) REFERENCES `groups`(id) ON DELETE CASCADE,
+  CONSTRAINT fk_expenses_payer
+    FOREIGN KEY (paid_by) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_expenses_creator
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT chk_expense_amount CHECK (amount_paise > 0)
+) ENGINE=InnoDB;
+
+-- 5. EXPENSE SPLITS
+CREATE TABLE IF NOT EXISTS expense_splits (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  expense_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  share DECIMAL(10, 2) NOT NULL,
+  share_paise BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_expense_split_member (expense_id, user_id),
+  CONSTRAINT fk_splits_expense
+    FOREIGN KEY (expense_id) REFERENCES expenses(id) ON DELETE CASCADE,
+  CONSTRAINT fk_splits_user
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT chk_split_amount CHECK (share_paise >= 0)
+) ENGINE=InnoDB;
+
+-- 6. SETTLEMENTS
+CREATE TABLE IF NOT EXISTS settlements (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  group_id BIGINT UNSIGNED NOT NULL,
+  payer_id BIGINT UNSIGNED NOT NULL,
+  payee_id BIGINT UNSIGNED NOT NULL,
+  amount DECIMAL(10, 2) NOT NULL,
+  amount_paise BIGINT UNSIGNED NOT NULL,
+  status ENUM('pending', 'confirmed', 'settled', 'rejected') NOT NULL DEFAULT 'confirmed',
+  note VARCHAR(500) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  settled_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_settlements_group_status (group_id, status),
+  CONSTRAINT fk_settlement_group
+    FOREIGN KEY (group_id) REFERENCES `groups`(id) ON DELETE CASCADE,
+  CONSTRAINT fk_settlement_payer
+    FOREIGN KEY (payer_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_settlement_payee
+    FOREIGN KEY (payee_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT chk_settlement_amount CHECK (amount_paise > 0),
+  CONSTRAINT chk_settlement_parties CHECK (payer_id <> payee_id)
+) ENGINE=InnoDB;
+
+SHOW TABLES;
+
